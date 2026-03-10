@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Dict, List, Optional, Tuple
 
 import gradio as gr
@@ -81,23 +82,34 @@ def _format_chunks(chunks: List[Dict[str, object]]) -> str:
 
     blocks = ["### Retrieved Chunks"]
     for idx, chunk in enumerate(chunks, start=1):
+        snippet = str(chunk["text"]).strip()
         blocks.append(
             (
-                f"#### Chunk {idx} — {chunk['source']} (chunk {chunk['chunk_index']}, "
+                f"#### [{idx}] {chunk['source']} (chunk {chunk['chunk_index']}, "
                 f"score {float(chunk['score']):.3f})\n"
-                f"{chunk['text']}"
+                f"{snippet}"
             )
         )
     return "\n\n".join(blocks)
 
 
-def _format_sources(sources: List[str]) -> str:
+def _format_sources(chunks: List[Dict[str, object]]) -> str:
     """Render source list."""
-    if not sources:
+    if not chunks:
         return "_No sources available yet._"
 
-    lines = "\n".join(f"- {source}" for source in sources)
-    return f"### Sources Used\n{lines}"
+    rows = []
+    for idx, chunk in enumerate(chunks, start=1):
+        rows.append(f"| [{idx}] | {chunk['source']} | {chunk['chunk_index']} |")
+    table = "\n".join(rows)
+    return "\n".join(
+        [
+            "### Sources Used",
+            "| Citation | Document | Chunk |",
+            "|---|---|---|",
+            table,
+        ]
+    )
 
 
 def _format_trace(steps: List[str]) -> str:
@@ -119,6 +131,63 @@ def _format_live(steps: List[str]) -> str:
     return f"### Live Progress\n- Steps completed: {len(steps)}\n{lines}"
 
 
+def _clean_model_markdown(text: str) -> str:
+    """Normalize model output into clean markdown."""
+    cleaned = (text or "").replace("\r\n", "\n").strip()
+
+    for fence in ("```markdown", "```md", "```text", "```"):
+        if cleaned.lower().startswith(fence):
+            cleaned = cleaned[len(fence) :].strip()
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+
+    if cleaned.startswith('"""') and cleaned.endswith('"""') and len(cleaned) > 6:
+        cleaned = cleaned[3:-3].strip()
+    if cleaned.startswith('"') and cleaned.endswith('"') and cleaned.count('"') <= 2:
+        cleaned = cleaned[1:-1].strip()
+
+    cleaned = re.split(
+        r"\n#{1,6}\s*references\b|\nreferences\s*:",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    cleaned = re.sub(r"\[chunk\s*(\d+)\]", r"[\1]", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned
+
+
+def _ensure_inline_citations(answer: str, max_refs: int) -> str:
+    """Ensure answer contains at least one inline citation marker."""
+    if max_refs <= 0:
+        return answer
+    if re.search(r"\[\d+\]", answer):
+        return answer
+
+    citation_span = " ".join(f"[{i}]" for i in range(1, min(max_refs, 3) + 1))
+    lines = answer.splitlines()
+    for idx in range(len(lines) - 1, -1, -1):
+        stripped = lines[idx].strip()
+        if stripped and not stripped.startswith("#"):
+            lines[idx] = f"{stripped.rstrip('.')} {citation_span}"
+            return "\n".join(lines)
+    return f"{answer}\n\n{citation_span}"
+
+
+def _format_final_answer(answer: str, chunks: List[Dict[str, object]]) -> str:
+    """Render final answer with inline citations and reference list."""
+    normalized = _ensure_inline_citations(_clean_model_markdown(answer), len(chunks))
+    lines = ["### Final Answer", normalized, "", "### References"]
+    for idx, chunk in enumerate(chunks, start=1):
+        snippet = str(chunk["text"]).replace("\n", " ").strip()
+        if len(snippet) > 180:
+            snippet = f"{snippet[:177]}..."
+        lines.append(
+            f"- [{idx}] **{chunk['source']}** chunk {chunk['chunk_index']}: {snippet}"
+        )
+    return "\n".join(lines)
+
+
 def _extract_file_paths(files: Optional[List[object]]) -> List[str]:
     """Normalize Gradio file objects to paths."""
     if not files:
@@ -136,7 +205,7 @@ def process_documents(
     files: Optional[List[object]],
     model_id: str,
     state: Optional[RAGPipeline],
-) -> Tuple[RAGPipeline, str, str, str, str, str, str, str]:
+) -> Tuple[RAGPipeline, str, str, str, str, str, str, str, gr.Tabs]:
     """Build FAISS index from uploaded files."""
     pipeline = state or _new_pipeline()
     pipeline.model_id = model_id
@@ -153,6 +222,7 @@ def process_documents(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             "_No trace yet._",
+            gr.Tabs(selected="live-progress"),
         )
 
     if len(file_paths) > MAX_FILES:
@@ -166,6 +236,7 @@ def process_documents(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             "_No trace yet._",
+            gr.Tabs(selected="live-progress"),
         )
 
     try:
@@ -185,6 +256,7 @@ def process_documents(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             _format_trace(steps),
+            gr.Tabs(selected="index-summary"),
         )
     except Exception as exc:  # noqa: BLE001
         message = f"Document processing failed: {exc}"
@@ -197,6 +269,7 @@ def process_documents(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             "_No trace yet._",
+            gr.Tabs(selected="live-progress"),
         )
 
 
@@ -220,6 +293,7 @@ def ask_question(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             _format_trace([message]),
+            gr.Tabs(selected="live-progress"),
         )
         return
 
@@ -234,6 +308,7 @@ def ask_question(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             _format_trace([message]),
+            gr.Tabs(selected="live-progress"),
         )
         return
 
@@ -248,6 +323,7 @@ def ask_question(
             "_No chunks retrieved yet._",
             "_No sources yet._",
             _format_trace([message]),
+            gr.Tabs(selected="live-progress"),
         )
         return
 
@@ -261,16 +337,12 @@ def ask_question(
         "_Retrieval in progress..._",
         "_Sources will appear after retrieval._",
         _format_trace(steps),
+        gr.Tabs(selected="live-progress"),
     )
 
     try:
         retrieved_chunks = pipeline.retrieve(question=question, top_k=top_k)
         steps.append(f"Retrieved top-{min(top_k, len(retrieved_chunks))} chunks.")
-
-        sources = []
-        for chunk in retrieved_chunks:
-            sources.append(f"{chunk['source']} — chunk {chunk['chunk_index']}")
-        unique_sources = sorted(set(sources))
 
         yield (
             pipeline,
@@ -279,8 +351,9 @@ def ask_question(
             _format_index_summary(pipeline.last_index_summary),
             "_Generating answer..._",
             _format_chunks(retrieved_chunks),
-            _format_sources(unique_sources),
+            _format_sources(retrieved_chunks),
             _format_trace(steps),
+            gr.Tabs(selected="retrieved-chunks"),
         )
 
         generation = pipeline.generate_answer(
@@ -293,13 +366,7 @@ def ask_question(
         answer = str(generation["answer"]).strip()
         if not answer:
             answer = "No answer returned by Gemini."
-
-        final_answer = "\n".join(
-            [
-                "### Final Answer",
-                answer,
-            ]
-        )
+        final_answer = _format_final_answer(answer, retrieved_chunks)
 
         yield (
             pipeline,
@@ -308,8 +375,9 @@ def ask_question(
             _format_index_summary(pipeline.last_index_summary),
             final_answer,
             _format_chunks(retrieved_chunks),
-            _format_sources(list(generation["sources"])),
+            _format_sources(retrieved_chunks),
             _format_trace(steps),
+            gr.Tabs(selected="final-answer"),
         )
     except Exception as exc:  # noqa: BLE001
         steps.append(f"Run failed: {exc}")
@@ -322,6 +390,7 @@ def ask_question(
             "_No chunks to display._",
             "_No sources to display._",
             _format_trace(steps),
+            gr.Tabs(selected="live-progress"),
         )
 
 
@@ -335,15 +404,6 @@ with gr.Blocks(title=APP_TITLE) as demo:
         with gr.Row(equal_height=False):
             with gr.Column(scale=4, elem_classes=["panel-card"]):
                 with gr.Tabs():
-                    with gr.Tab("Documents"):
-                        gr.Markdown("### Upload Documents")
-                        files_input = gr.File(
-                            file_count="multiple",
-                            file_types=[".pdf", ".txt", ".md"],
-                            label=f"Files (max {MAX_FILES})",
-                        )
-                        process_button = gr.Button("Process Documents", variant="primary", elem_id="process-btn")
-
                     with gr.Tab("Task"):
                         gr.Markdown("### Ask a Question")
                         question_input = gr.Textbox(
@@ -365,7 +425,20 @@ with gr.Blocks(title=APP_TITLE) as demo:
                         )
                         ask_button = gr.Button("Ask Question", variant="primary", elem_id="ask-btn")
 
-                    with gr.Tab("API & Model"):
+                    with gr.Tab("Documents"):
+                        gr.Markdown("### Upload Documents")
+                        files_input = gr.File(
+                            file_count="multiple",
+                            file_types=[".pdf", ".txt", ".md"],
+                            label=f"Files (max {MAX_FILES})",
+                        )
+                        process_button = gr.Button(
+                            "Process Documents",
+                            variant="primary",
+                            elem_id="process-btn",
+                        )
+
+                    with gr.Tab("API"):
                         gr.Markdown("### Gemini Configuration")
                         api_key_input = gr.Textbox(
                             label="Gemini API Key",
@@ -382,24 +455,49 @@ with gr.Blocks(title=APP_TITLE) as demo:
             with gr.Column(scale=6, elem_classes=["panel-card"]):
                 gr.Markdown("## Results")
                 status_output = gr.Markdown(_format_status("Upload documents and process them to start."))
-                with gr.Tabs():
-                    with gr.Tab("Live Progress"):
-                        live_output = gr.Markdown(_format_live([]), elem_classes=["output-card"])
+                with gr.Tabs(selected="live-progress") as right_tabs:
+                    with gr.Tab("Live Progress", id="live-progress"):
+                        live_output = gr.Markdown(
+                            _format_live([]),
+                            elem_classes=["output-card"],
+                            line_breaks=True,
+                        )
 
-                    with gr.Tab("Index Summary"):
-                        index_summary_output = gr.Markdown(_format_index_summary({}), elem_classes=["output-card"])
+                    with gr.Tab("Index Summary", id="index-summary"):
+                        index_summary_output = gr.Markdown(
+                            _format_index_summary({}),
+                            elem_classes=["output-card"],
+                            line_breaks=True,
+                        )
 
-                    with gr.Tab("Final Answer"):
-                        answer_output = gr.Markdown("_No answer yet._", elem_classes=["output-card"])
+                    with gr.Tab("Retrieved Chunks", id="retrieved-chunks"):
+                        chunks_output = gr.Markdown(
+                            "_No chunks retrieved yet._",
+                            elem_classes=["output-card"],
+                            line_breaks=True,
+                        )
 
-                    with gr.Tab("Retrieved Chunks"):
-                        chunks_output = gr.Markdown("_No chunks retrieved yet._", elem_classes=["output-card"])
+                    with gr.Tab("Sources", id="sources"):
+                        sources_output = gr.Markdown(
+                            "_No sources yet._",
+                            elem_classes=["output-card"],
+                            line_breaks=True,
+                        )
 
-                    with gr.Tab("Sources"):
-                        sources_output = gr.Markdown("_No sources yet._", elem_classes=["output-card"])
+                    with gr.Tab("Pipeline Trace", id="pipeline-trace"):
+                        trace_output = gr.Markdown(
+                            "_No trace yet._",
+                            elem_classes=["output-card"],
+                            line_breaks=True,
+                        )
 
-                    with gr.Tab("Pipeline Trace"):
-                        trace_output = gr.Markdown("_No trace yet._", elem_classes=["output-card"])
+                    with gr.Tab("Final Answer", id="final-answer"):
+                        answer_output = gr.Markdown(
+                            "_No answer yet._",
+                            elem_classes=["output-card"],
+                            line_breaks=True,
+                            buttons=["copy"],
+                        )
 
     process_button.click(
         fn=process_documents,
@@ -413,6 +511,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
             chunks_output,
             sources_output,
             trace_output,
+            right_tabs,
         ],
     )
 
@@ -428,6 +527,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
             chunks_output,
             sources_output,
             trace_output,
+            right_tabs,
         ],
     )
 
@@ -438,5 +538,4 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=port,
         css=APP_CSS,
-        theme=gr.themes.Default(),
     )

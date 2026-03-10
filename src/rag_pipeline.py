@@ -102,7 +102,7 @@ class RAGPipeline:
         for idx, chunk in enumerate(retrieved_chunks, start=1):
             context_blocks.append(
                 (
-                    f"[Chunk {idx} | source: {chunk['source']} | part: {chunk['chunk_index']}]\n"
+                    f"[{idx}] source={chunk['source']} chunk={chunk['chunk_index']}\n"
                     f"{chunk['text']}"
                 )
             )
@@ -110,11 +110,16 @@ class RAGPipeline:
         context = "\n\n".join(context_blocks) if context_blocks else "No retrieved context."
 
         return (
-            "You are a document QA assistant. Answer only using the context below. "
-            "If the answer is not present, say you cannot find it in the provided documents.\n\n"
+            "You are a precise document QA assistant.\n"
+            "Rules:\n"
+            "1) Use only the provided context.\n"
+            "2) Do not invent details.\n"
+            "3) Cite supporting evidence inline using bracket citations like [1], [2].\n"
+            "4) Keep markdown clean: no code fences and no triple quotes.\n"
+            "5) End with a heading `### References` and list cited ids.\n\n"
             f"Context:\n{context}\n\n"
             f"Question:\n{question.strip()}\n\n"
-            "Return a concise, well-structured answer with headings or bullets when useful."
+            "Return a concise, direct answer to the question with good structure."
         )
 
     def generate_answer(
