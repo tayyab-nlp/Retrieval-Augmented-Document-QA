@@ -1,11 +1,3 @@
----
-title: Retrieval-Augmented Document QA
-sdk: gradio
-python_version: "3.10"
-app_file: app.py
-pinned: false
----
-
 # Retrieval-Augmented Document QA
 
 Space Demo Link: [https://vtayyab6-retrieval-augmented-document-qa.hf.space](https://vtayyab6-retrieval-augmented-document-qa.hf.space)
