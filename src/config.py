@@ -26,7 +26,7 @@ DEFAULT_TOP_K = 3
 MAX_TOP_K = 5
 
 EXAMPLE_QUESTIONS = [
-    "What are the main contributions described in these documents?",
-    "Explain the transformer architecture using the uploaded context.",
-    "What problem does retrieval-augmented generation solve?",
+    "What are the key objectives described in these documents?",
+    "Summarize the most important requirements for a manager.",
+    "List the main risks, constraints, or limitations mentioned.",
 ]

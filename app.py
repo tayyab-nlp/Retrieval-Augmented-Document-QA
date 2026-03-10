@@ -131,6 +131,39 @@ def _format_live(steps: List[str]) -> str:
     return f"### Live Progress\n- Steps completed: {len(steps)}\n{lines}"
 
 
+def _reflow_markdown_paragraphs(text: str) -> str:
+    """Collapse accidental single line breaks while preserving markdown structure."""
+    lines = text.splitlines()
+    out: List[str] = []
+    paragraph: List[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            out.append(" ".join(part.strip() for part in paragraph if part.strip()))
+            paragraph.clear()
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            flush_paragraph()
+            if out and out[-1] != "":
+                out.append("")
+            continue
+
+        is_structured = bool(
+            re.match(r"^(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\|\s*.+\s*\||\[?\d+\]?\s)", line)
+        )
+        if is_structured:
+            flush_paragraph()
+            out.append(line)
+            continue
+
+        paragraph.append(line)
+
+    flush_paragraph()
+    return "\n".join(out).strip()
+
+
 def _clean_model_markdown(text: str) -> str:
     """Normalize model output into clean markdown."""
     cleaned = (text or "").replace("\r\n", "\n").strip()
@@ -154,6 +187,7 @@ def _clean_model_markdown(text: str) -> str:
     )[0].strip()
     cleaned = re.sub(r"\[chunk\s*(\d+)\]", r"[\1]", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = _reflow_markdown_paragraphs(cleaned)
     return cleaned
 
 
@@ -178,6 +212,10 @@ def _format_final_answer(answer: str, chunks: List[Dict[str, object]]) -> str:
     """Render final answer with inline citations and reference list."""
     normalized = _ensure_inline_citations(_clean_model_markdown(answer), len(chunks))
     lines = ["### Final Answer", normalized, "", "### References"]
+    if not chunks:
+        lines.append("- No document references (documents were not indexed).")
+        return "\n".join(lines)
+
     for idx, chunk in enumerate(chunks, start=1):
         snippet = str(chunk["text"]).replace("\n", " ").strip()
         if len(snippet) > 180:
@@ -282,23 +320,8 @@ def ask_question(
     """Retrieve context + generate answer with live updates."""
     pipeline = state or _new_pipeline()
 
-    if not pipeline.has_index():
-        message = "Please process documents first."
-        yield (
-            pipeline,
-            _format_status(message, "error"),
-            _format_live([message]),
-            _format_index_summary(pipeline.last_index_summary),
-            "_No answer yet._",
-            "_No chunks retrieved yet._",
-            "_No sources yet._",
-            _format_trace([message]),
-            gr.Tabs(selected="live-progress"),
-        )
-        return
-
     if not api_key or not api_key.strip():
-        message = "Gemini API key is required."
+        message = "Please add your Gemini API key in the API tab."
         yield (
             pipeline,
             _format_status(message, "error"),
@@ -328,6 +351,58 @@ def ask_question(
         return
 
     steps: List[str] = ["Question received."]
+
+    if not pipeline.has_index():
+        steps.append("No documents indexed. Running general answer mode.")
+        yield (
+            pipeline,
+            _format_status("No index found. Generating answer without document retrieval...", "running"),
+            _format_live(steps),
+            _format_index_summary(pipeline.last_index_summary),
+            "_Generating answer..._",
+            "_No retrieved chunks (documents not indexed)._",
+            "_No sources available in general mode._",
+            _format_trace(steps),
+            gr.Tabs(selected="live-progress"),
+        )
+
+        try:
+            generation = pipeline.generate_answer_without_retrieval(
+                api_key=api_key,
+                question=question,
+            )
+            steps.append("Generated final answer without retrieval.")
+            answer = str(generation["answer"]).strip() or "No answer returned by Gemini."
+            final_answer = _format_final_answer(answer, [])
+            yield (
+                pipeline,
+                _format_status(
+                    "Done. Answer is ready (no documents indexed, so no citations).",
+                    "success",
+                ),
+                _format_live(steps),
+                _format_index_summary(pipeline.last_index_summary),
+                final_answer,
+                "_No retrieved chunks (documents not indexed)._",
+                "_No sources available in general mode._",
+                _format_trace(steps),
+                gr.Tabs(selected="final-answer"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            steps.append(f"Run failed: {exc}")
+            yield (
+                pipeline,
+                _format_status(f"Question answering failed: {exc}", "error"),
+                _format_live(steps),
+                _format_index_summary(pipeline.last_index_summary),
+                "_No answer produced due to an error._",
+                "_No chunks to display._",
+                "_No sources to display._",
+                _format_trace(steps),
+                gr.Tabs(selected="live-progress"),
+            )
+        return
+
     yield (
         pipeline,
         _format_status("Retrieving relevant chunks from FAISS...", "running"),
@@ -409,7 +484,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
                         question_input = gr.Textbox(
                             label="Question",
                             lines=5,
-                            placeholder="Example: What are the main contributions in these documents?",
+                            placeholder="Ask about uploaded documents, or ask a general question.",
                         )
                         gr.Examples(
                             examples=[[item] for item in EXAMPLE_QUESTIONS],
@@ -460,42 +535,36 @@ with gr.Blocks(title=APP_TITLE) as demo:
                         live_output = gr.Markdown(
                             _format_live([]),
                             elem_classes=["output-card"],
-                            line_breaks=True,
                         )
 
                     with gr.Tab("Index Summary", id="index-summary"):
                         index_summary_output = gr.Markdown(
                             _format_index_summary({}),
                             elem_classes=["output-card"],
-                            line_breaks=True,
                         )
 
                     with gr.Tab("Retrieved Chunks", id="retrieved-chunks"):
                         chunks_output = gr.Markdown(
                             "_No chunks retrieved yet._",
                             elem_classes=["output-card"],
-                            line_breaks=True,
                         )
 
                     with gr.Tab("Sources", id="sources"):
                         sources_output = gr.Markdown(
                             "_No sources yet._",
                             elem_classes=["output-card"],
-                            line_breaks=True,
                         )
 
                     with gr.Tab("Pipeline Trace", id="pipeline-trace"):
                         trace_output = gr.Markdown(
                             "_No trace yet._",
                             elem_classes=["output-card"],
-                            line_breaks=True,
                         )
 
                     with gr.Tab("Final Answer", id="final-answer"):
                         answer_output = gr.Markdown(
                             "_No answer yet._",
                             elem_classes=["output-card"],
-                            line_breaks=True,
                             buttons=["copy"],
                         )
 

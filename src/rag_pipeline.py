@@ -122,6 +122,17 @@ class RAGPipeline:
             "Return a concise, direct answer to the question with good structure."
         )
 
+    @staticmethod
+    def build_no_context_prompt(question: str) -> str:
+        """Create fallback prompt when no indexed documents are available."""
+        return (
+            "You are a helpful assistant.\n"
+            "No uploaded document context is available for this question.\n"
+            "Give a concise, structured answer using your general knowledge.\n"
+            "Do not include fake document citations.\n\n"
+            f"Question:\n{question.strip()}"
+        )
+
     def generate_answer(
         self,
         api_key: str,
@@ -142,4 +153,18 @@ class RAGPipeline:
             "answer": answer,
             "prompt": prompt,
             "sources": list(source_map.keys()),
+        }
+
+    def generate_answer_without_retrieval(
+        self,
+        api_key: str,
+        question: str,
+    ) -> Dict[str, object]:
+        """Generate answer directly from Gemini when no index is available."""
+        prompt = self.build_no_context_prompt(question)
+        answer = generate_text(api_key=api_key, prompt=prompt, model_id=self.model_id)
+        return {
+            "answer": answer,
+            "prompt": prompt,
+            "sources": [],
         }
