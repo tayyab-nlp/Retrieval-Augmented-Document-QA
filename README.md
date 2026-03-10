@@ -1,3 +1,11 @@
+---
+title: Retrieval-Augmented Document QA
+sdk: gradio
+python_version: "3.10"
+app_file: app.py
+pinned: false
+---
+
 # Retrieval-Augmented Document QA
 
 A Gradio application that lets users upload documents, build a semantic FAISS index, and ask grounded questions answered by Gemini with retrieved context.
