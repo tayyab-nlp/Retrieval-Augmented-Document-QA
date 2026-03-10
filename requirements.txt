@@ -1,0 +1,8 @@
+gradio
+requests
+pypdf
+faiss-cpu
+sentence-transformers
+langchain-core
+langchain-text-splitters
+numpy
