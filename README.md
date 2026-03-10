@@ -8,19 +8,46 @@ pinned: false
 
 # Retrieval-Augmented Document QA
 
-A Gradio application that lets users upload documents, build a semantic FAISS index, and ask grounded questions answered by Gemini with retrieved context.
+Space Demo Link: [https://vtayyab6-retrieval-augmented-document-qa.hf.space](https://vtayyab6-retrieval-augmented-document-qa.hf.space)
+
+A clean Gradio RAG demo where you upload files, build a FAISS index, ask questions, and get grounded Gemini answers with visible chunk-level citations and source references.
 
 ## Features
 
-| Feature | Details |
+| Area | Details |
 |---|---|
-| Document upload | Supports PDF, TXT, and Markdown (`max 3` files for fast demos). |
-| RAG pipeline | Text extraction -> chunking -> embeddings -> FAISS indexing -> retrieval -> Gemini answering. |
-| Embeddings | `all-MiniLM-L6-v2` (SentenceTransformers). |
-| LLM | `gemini-3.1-flash-lite-preview` via HTTP API. |
-| Retrieval transparency | Shows retrieved chunks, source references, and pipeline trace. |
-| Security | API key is entered in the UI, used per run, and not stored/logged. |
-| Space speed controls | File count limit, PDF page limit, text-size cap, lazy model loading, and shared embedding cache. |
+| Document Support | Upload up to 3 files (`.pdf`, `.txt`, `.md`) for fast CPU demos. |
+| RAG Pipeline | Load text -> chunk -> embed (`all-MiniLM-L6-v2`) -> FAISS retrieval -> Gemini answer. |
+| Grounded Output | Final answer includes inline citations (`[1]`, `[2]`) and a references section. |
+| Transparency | Separate tabs for progress, index summary, retrieved chunks, sources, and trace. |
+| API Handling | Gemini API key is entered in the UI, used per run, and not stored/logged. |
+| Fast on Spaces | Lightweight defaults, text limits, and cached embedding model loading. |
+
+## Screenshots
+
+Initial screen before running:
+
+![Before running](screenshots/1.%20before%20running.png)
+
+Documents processed and chunking complete:
+
+![Chunking finished](screenshots/2.%20chunking%20finished.png)
+
+Grounded final answer with citations:
+
+![Sample answer](screenshots/3.%20sample%20answer%20rag%20grounded.png)
+
+Retrieved chunks used for answer generation:
+
+![Retrieved chunks](screenshots/4.%20retrieved%20chunks.png)
+
+Source mapping and citation references:
+
+![Sources](screenshots/5.%20sources.png)
+
+Step-by-step pipeline execution trace:
+
+![Pipeline trace](screenshots/6.%20pipeline%20traces.png)
 
 ## Project Structure
 
@@ -29,43 +56,33 @@ retrieval-augmented-document-qa/
 ├── app.py
 ├── requirements.txt
 ├── README.md
+├── screenshots/
 └── src/
     ├── __init__.py
+    ├── chunker.py
     ├── config.py
     ├── document_loader.py
-    ├── chunker.py
     ├── embeddings.py
-    ├── vector_store.py
-    ├── retriever.py
+    ├── gemini_client.py
     ├── rag_pipeline.py
-    └── gemini_client.py
+    ├── retriever.py
+    └── vector_store.py
 ```
 
 ## How It Works
 
-1. Upload up to 3 files (`.pdf`, `.txt`, `.md`).
-2. Click **Process Documents** to build the knowledge base.
-3. Enter your Gemini API key and question.
-4. Click **Ask Question**.
-5. Review:
-   - final answer
-   - retrieved chunks
-   - sources used
-   - execution trace
+1. Upload documents (optional for general Q&A mode).
+2. Click `Process Documents` to build the FAISS knowledge base.
+3. Add your Gemini API key in the `API` tab.
+4. Ask a question in the `Task` tab.
+5. Review answer, citations, retrieved chunks, sources, and pipeline trace.
 
 ## Local Setup
 
 ```bash
 cd retrieval-augmented-document-qa
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python app.py
+python3 app.py
 ```
-
-Open `http://127.0.0.1:7860`.
-
-## Notes
-
-- This app runs fully on CPU and is designed for Hugging Face Spaces demos.
-- Retrieval controls answer grounding; if context is missing, the app prompts Gemini to say so.
