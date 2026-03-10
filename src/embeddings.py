@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import List
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+
+@lru_cache(maxsize=2)
+def _load_model(model_name: str):
+    """Lazy-load and cache embedding model across app sessions."""
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name)
 
 
 class EmbeddingModel:
@@ -13,7 +21,7 @@ class EmbeddingModel:
 
     def __init__(self, model_name: str):
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        self.model = _load_model(model_name)
 
     def embed_texts(self, texts: List[str]) -> np.ndarray:
         """Encode a list of texts into normalized vectors."""

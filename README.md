@@ -20,6 +20,7 @@ A Gradio application that lets users upload documents, build a semantic FAISS in
 | LLM | `gemini-3.1-flash-lite-preview` via HTTP API. |
 | Retrieval transparency | Shows retrieved chunks, source references, and pipeline trace. |
 | Security | API key is entered in the UI, used per run, and not stored/logged. |
+| Space speed controls | File count limit, PDF page limit, text-size cap, lazy model loading, and shared embedding cache. |
 
 ## Project Structure
 

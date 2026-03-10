@@ -1,11 +1,8 @@
-"""Chunking utilities built on LangChain text splitters."""
+"""Fast character-based chunking utilities."""
 
 from __future__ import annotations
 
 from typing import Dict, List
-
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 
 def chunk_documents(
     documents: List[Dict[str, str]],
@@ -13,27 +10,33 @@ def chunk_documents(
     chunk_overlap: int,
 ) -> List[Dict[str, str]]:
     """Split each document into overlapping chunks for retrieval."""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", " ", ""],
-    )
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero.")
+    if chunk_overlap < 0:
+        raise ValueError("chunk_overlap cannot be negative.")
+
+    step = max(chunk_size - chunk_overlap, 1)
 
     chunks: List[Dict[str, str]] = []
     for document in documents:
-        split_texts = splitter.split_text(document["text"])
-        for i, text in enumerate(split_texts, start=1):
-            clean_text = text.strip()
+        text = document["text"].replace("\r\n", "\n")
+        chunk_idx = 0
+        for start in range(0, len(text), step):
+            window = text[start : start + chunk_size]
+            clean_text = window.strip()
             if not clean_text:
                 continue
+            chunk_idx += 1
             chunks.append(
                 {
-                    "chunk_id": f"{document['source']}#{i}",
+                    "chunk_id": f"{document['source']}#{chunk_idx}",
                     "source": document["source"],
-                    "chunk_index": i,
+                    "chunk_index": chunk_idx,
                     "text": clean_text,
                 }
             )
+            if start + chunk_size >= len(text):
+                break
 
     if not chunks:
         raise ValueError("No chunks were created from the uploaded files.")
